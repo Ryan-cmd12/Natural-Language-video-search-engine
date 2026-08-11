@@ -154,49 +154,72 @@ class CLIPEmbedder:
             "float32"
         )
 
-    def encode_text(
-        self,
-        text: str,
-    ) -> np.ndarray:
-
-        inputs = self.processor(
-            text=[text],
-            return_tensors="pt",
-            padding=True,
+    def encode_text(self,text: str,) -> np.ndarray:
+        return self.encode_texts(
+            [text]
         )
 
-        input_ids = (
-            inputs["input_ids"]
-            .to(self.device)
-        )
 
-        attention_mask = (
-            inputs["attention_mask"]
-            .to(self.device)
-        )
 
-        with torch.inference_mode():
-
-            output = (
-                self.model
-                .get_text_features(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                )
+    def encode_texts(self,texts: list[str],batch_size: int = 32,) -> np.ndarray:
+        if not texts:
+            raise ValueError(
+                "texts cannot be empty"
             )
+
+        all_embeddings = []
+
+        for start in tqdm(
+            range(0, len(texts), batch_size),
+            desc="Embedding text",
+        ):
+
+            batch = texts[
+                start:start + batch_size
+            ]
+
+            inputs = self.processor(
+                text=batch,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+            )
+
+            inputs = {
+                key: value.to(self.device)
+                for key, value
+                in inputs.items()
+            }
+
+            with torch.inference_mode():
+
+                output = (
+                    self.model
+                    .get_text_features(
+                        **inputs
+                    )
+                )
+
+                features = (
+                    self._extract_features(
+                        output
+                    )
+                )
 
             features = (
-                self._extract_features(
-                    output
-                )
+                features
+                .detach()
+                .cpu()
+                .numpy()
+                .astype("float32")
             )
 
-        embeddings = (
-            features
-            .detach()
-            .cpu()
-            .numpy()
-            .astype("float32")
+            all_embeddings.append(
+                features
+            )
+
+        embeddings = np.vstack(
+            all_embeddings
         )
 
         embeddings = self._normalize(
