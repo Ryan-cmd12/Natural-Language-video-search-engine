@@ -26,7 +26,7 @@ class GroundingDinoDetector(
         self,
         model_name: str = (
             "IDEA-Research/"
-            "grounding-dino-tiny"
+            "grounding-dino-base"
         ),
         device: str = "cpu",
     ):
@@ -58,27 +58,22 @@ class GroundingDinoDetector(
 
         self.model.eval()
 
-    def detect(
-        self,
-        image_path: str,
-        labels: list[str],
-        box_threshold: float = 0.35,
-        text_threshold: float = 0.25,
-    ) -> list[ObjectDetection]:
+    def detect(self,image_path: str,labels: list[str],box_threshold: float = 0.40,text_threshold: float = 0.30,) -> list[ObjectDetection]:
 
-        path = Path(
-            image_path
-        )
+        path = Path(image_path)
 
         if not path.exists():
-
             raise FileNotFoundError(
-                f"Image not found: "
-                f"{image_path}"
+                f"Image not found: {image_path}"
             )
 
-        if not labels:
+        clean_labels = [
+            label.strip().lower()
+            for label in labels
+            if label.strip()
+        ]
 
+        if not clean_labels:
             raise ValueError(
                 "At least one detection "
                 "label is required."
@@ -90,10 +85,8 @@ class GroundingDinoDetector(
             .convert("RGB")
         )
 
-        # Grounding DINO accepts
-        # one list of labels per image.
         text_labels = [
-            labels
+            clean_labels
         ]
 
         inputs = self.processor(
@@ -103,9 +96,7 @@ class GroundingDinoDetector(
         )
 
         inputs = {
-            key: value.to(
-                self.device
-            )
+            key: value.to(self.device)
             for key, value
             in inputs.items()
         }
@@ -122,9 +113,7 @@ class GroundingDinoDetector(
                 outputs,
 
                 input_ids=
-                    inputs[
-                        "input_ids"
-                    ],
+                    inputs["input_ids"],
 
                 threshold=
                     box_threshold,
@@ -155,9 +144,13 @@ class GroundingDinoDetector(
             "scores"
         ]
 
-        detected_labels = result[
-            "labels"
-        ]
+        detected_labels = result.get(
+            "text_labels",
+            result.get(
+                "labels",
+                [],
+            ),
+        )
 
         for (
             box,
