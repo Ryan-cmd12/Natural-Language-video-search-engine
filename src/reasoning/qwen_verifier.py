@@ -26,11 +26,11 @@ class QwenVideoVerifier:
 
     def __init__(
         self,
+        max_frames,
         model_name: str = (
             "Qwen/Qwen2.5-VL-3B-Instruct"
         ),
         device: str = None,
-        max_frames: int = 4,
     ):
 
         self.model_name = model_name
@@ -148,64 +148,56 @@ class QwenVideoVerifier:
     ) -> str:
 
         return f"""
-You are a strict video-search verification system.
+        You are a strict video-search verification system.
 
-The user searched for:
+        The user searched for:
 
-"{query}"
+        "{query}"
 
-You are given {frame_count} frames in chronological
-order from the video segment:
+        You are given {frame_count} frames in chronological
+        order from the video segment:
 
-{start_time:.2f}s -> {end_time:.2f}s
+        {start_time:.2f}s -> {end_time:.2f}s
 
-Your task is to determine whether this video segment
-ACTUALLY contains visual evidence that satisfies the
-user's search query.
+        Your task is to determine whether this video segment
+        ACTUALLY contains visual evidence that satisfies the
+        user's search query.
 
-Important rules:
+        Important rules:
 
-1. Do not assume a match exists.
-2. Similar-looking content is not enough.
-3. The requested object, person, attribute, action,
-   or scene must be visually supported.
-4. If the query asks for an object such as "bus",
-   the actual object must be visible.
-5. Text merely mentioning the object does NOT count
-   unless the user's query specifically asks for
-   visible text.
-6. Do not infer objects that are not visible.
-7. If evidence is weak or ambiguous, return false.
-8. For actions, use the chronological sequence of
-   frames rather than judging from one frame alone.
-9. confidence means the strength of evidence that
-   the QUERY IS ACTUALLY PRESENT.
-   It is NOT confidence in your ability to answer.
+        1. Do not assume a match exists.
+        2. Similar-looking content is not enough.
+        3. The requested object, person, attribute, action,
+        or scene must be visually supported.
+        4. If the query asks for an object such as "bus",
+        the actual object must be visible.
+        5. Text merely mentioning the object does NOT count
+        unless the user's query specifically asks for
+        visible text.
+        6. Do not infer objects that are not visible.
+        7. If evidence is weak or ambiguous, return false.
+        8. For actions, use the chronological sequence of
+        frames rather than judging from one frame alone.
+        9. confidence means the strength of evidence that
+        the QUERY IS ACTUALLY PRESENT.
+        It is NOT confidence in your ability to answer.
 
-Return ONLY valid JSON.
+        Return ONLY valid JSON with exactly these fields:
 
-Schema:
+        {{
+            "match": <true or false>,
+            "confidence": <number between 0.0 and 1.0>,
+            "reason": "<brief factual description of what is actually visible>",
+            "evidence_frames": <list of 1-based frame numbers supporting the decision>
+        }}
 
-{{
-    "match": true,
-    "confidence": 0.95,
-    "reason": "Short factual explanation.",
-    "evidence_frames": [1, 2]
-}}
+        Do not copy example descriptions.
+        Describe only what is actually visible in the provided frames.
 
-or:
-
-{{
-    "match": false,
-    "confidence": 0.02,
-    "reason": "The frames show a website interface and no bus is visible.",
-    "evidence_frames": []
-}}
-
-Frame numbers are 1-based.
-Do not output markdown.
-Do not output anything outside the JSON.
-""".strip()
+        Frame numbers are 1-based.
+        Do not output markdown.
+        Do not output anything outside the JSON.
+        """.strip()
 
     # =========================================
     # Parse model JSON safely
@@ -479,6 +471,10 @@ Do not output anything outside the JSON.
                 clean_up_tokenization_spaces=False,
             )[0]
         )
+
+        print("\n[QWEN RAW RESPONSE]")
+        print(output_text)
+        print()
 
         return self._parse_response(
             output_text

@@ -14,6 +14,8 @@ from src.embeddings.text_embedder import (
     TextEmbedder,
 )
 
+import torch
+
 
 class SegmentSearchEngine:
 
@@ -298,6 +300,9 @@ class SegmentSearchEngine:
                     segment[
                         "representative_frame_path"
                     ],
+
+                #For sam
+                "frame_ids": segment["frame_ids"],
 
                 #For the verifier, it needs all the frames from a segment
                 "frame_paths":

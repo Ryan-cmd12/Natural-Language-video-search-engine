@@ -26,13 +26,15 @@ def main():
     parser.add_argument(
         "--box-threshold",
         type=float,
-        default=0.40,
+        default=0.30,
+        #0.4
     )
 
     parser.add_argument(
         "--text-threshold",
         type=float,
-        default=0.30,
+        default=0.20,
+        #0.3
     )
 
     parser.add_argument(
