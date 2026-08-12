@@ -1,4 +1,5 @@
 from dataclasses import dataclass, asdict
+from typing import Any
 
 
 @dataclass
@@ -16,18 +17,20 @@ class ObjectDetection:
     frame_id: int | None = None
     timestamp: float | None = None
 
+    #for sam3
+    mask: Any | None = None
+
     def to_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+
+        # Don't try to serialize the raw mask tensor directly
+        if data["mask"] is not None:
+            data["mask"] = "<mask>"
+        return data
 
     @property
     def bbox(self) -> list[float]:
-        return [
-            self.x1,
-            self.y1,
-            self.x2,
-            self.y2,
-        ]
-
+        return [self.x1, self.y1, self.x2, self.y2]
 
 '''
 Example of how an objectDetection shld look like:

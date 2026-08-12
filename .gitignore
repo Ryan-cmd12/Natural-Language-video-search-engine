@@ -73,3 +73,11 @@ build/
 dist/
 *.egg-info/
 .eggs/
+
+sam3
+!sam3/.gitkeep
+
+sam3original
+
+checkpoints
+!checkpoints/.gitkeep
