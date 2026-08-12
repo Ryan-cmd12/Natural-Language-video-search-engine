@@ -1,4 +1,5 @@
 import argparse
+import torch
 
 from src.retrieval.segment_search_engine import (
     SegmentSearchEngine,
@@ -65,7 +66,7 @@ def main():
 
     engine = SegmentSearchEngine(
         video_id=args.video_id,
-        device="cpu",
+        device="cuda" if torch.cuda.is_available() else "cpu",
     )
 
     results = engine.search(

@@ -1,0 +1,58 @@
+{
+    "video_id": "test",
+
+    "queries": [
+        {
+            "query": "create paper account",
+            "expected": "match",
+            "ground_truth": [
+                {
+                    "start": 34.0,
+                    "end": 46.0
+                }
+            ]
+        },
+
+        {
+            "query": "graph",
+            "expected": "match",
+            "ground_truth": [
+                {
+                    "start": 70.0,
+                    "end": 93.0
+                }
+            ]
+        },
+
+        {
+            "query": "create account page",
+            "expected": "match",
+            "ground_truth": [
+                {
+                    "start": 15.0,
+                    "end": 27.0
+                }
+            ]
+        },
+
+        {
+            "query": "bus",
+            "expected": "no_match"
+        },
+
+        {
+            "query": "elephant",
+            "expected": "no_match"
+        },
+
+        {
+            "query": "airplane flying",
+            "expected": "no_match"
+        },
+
+        {
+            "query": "football match",
+            "expected": "no_match"
+        }
+    ]
+}

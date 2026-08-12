@@ -20,8 +20,11 @@ class SegmentSearchEngine:
     def __init__(
         self,
         video_id: str,
-        device: str = "cpu",
-    ):
+        device: str = None,
+    ):  
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        
 
         self.video_id = video_id
 
@@ -295,6 +298,10 @@ class SegmentSearchEngine:
                     segment[
                         "representative_frame_path"
                     ],
+
+                #For the verifier, it needs all the frames from a segment
+                "frame_paths":
+                    segment["frame_paths"],
 
                 "visual_score":
                     visual_score,

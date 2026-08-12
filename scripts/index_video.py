@@ -2,6 +2,7 @@ import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
+import torch
 
 from src.ingestion.video_reader import (
     get_video_metadata,
@@ -78,7 +79,7 @@ def index_video(
     print("\n--- GENERATING EMBEDDINGS ---")
 
     embedder = CLIPEmbedder(
-        device="cpu"
+        device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
     embeddings = (

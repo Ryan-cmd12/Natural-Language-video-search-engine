@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
+import torch
 
 from src.segmentation.fixed_window_segmenter import (
     create_fixed_segments,
@@ -123,7 +124,7 @@ def index_segments(
     # ==========================================
 
     clip = CLIPEmbedder(
-        device="cpu"
+        device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
     # ==========================================
@@ -244,7 +245,7 @@ def index_segments(
     )
 
     captioner = BLIPCaptioner(
-        device="cpu"
+        device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
     for segment in tqdm(
@@ -292,7 +293,7 @@ def index_segments(
     )
 
     text_embedder = TextEmbedder(
-        device="cpu"
+        device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
     captions = [
