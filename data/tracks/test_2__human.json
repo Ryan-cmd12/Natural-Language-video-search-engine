@@ -1,0 +1,28 @@
+{
+    "schema_version": 1,
+    "video_id": "test_2",
+    "video_path": "samples\\test_2.mp4",
+    "label": "human",
+    "fps": 30.0,
+    "track_count": 0,
+    "build_info": {
+        "query": "human",
+        "concept": "human",
+        "candidate_k": 5,
+        "output_prob_thresh": 0.5,
+        "max_frames": null,
+        "prompt_frames_tried": [
+            510,
+            450,
+            570,
+            900,
+            810,
+            750,
+            870,
+            60
+        ],
+        "successful_prompt_frame": null,
+        "status": "no_match"
+    },
+    "tracks": []
+}
