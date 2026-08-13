@@ -1,0 +1,28 @@
+{
+    "schema_version": 1,
+    "video_id": "test_2",
+    "video_path": "samples\\test_2.mp4",
+    "label": "blue car",
+    "fps": 30.0,
+    "track_count": 0,
+    "build_info": {
+        "query": "blue car",
+        "concept": "blue car",
+        "candidate_k": 5,
+        "output_prob_thresh": 0.5,
+        "max_frames": null,
+        "prompt_frames_tried": [
+            60,
+            0,
+            120,
+            660,
+            600,
+            720,
+            360,
+            300
+        ],
+        "successful_prompt_frame": null,
+        "status": "no_match"
+    },
+    "tracks": []
+}

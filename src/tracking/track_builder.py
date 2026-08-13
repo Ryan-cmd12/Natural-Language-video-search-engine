@@ -30,7 +30,7 @@ class TrackBuilder:
         prompt_frame: int = 0,
         output_prob_thresh: float = 0.5,
         max_frames: int | None = None,
-        direction:str = "both",
+        direction:str = "forward",
     ) -> list[ObjectTrack]:
 
         if fps <= 0:
