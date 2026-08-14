@@ -55,11 +55,6 @@ class QueryPlanner:
 
         entity_steps = []
 
-        #
-        # STEP 1:
-        # Retrieve tracks for every entity
-        #
-
         for index, entity in enumerate(
             entities
         ):
@@ -83,16 +78,21 @@ class QueryPlanner:
                 )
             )
 
-            step_id = (
+            # ==============================================
+            # ENTITY LOOKUP
+            # ==============================================
+
+            lookup_step_id = (
                 f"find_{entity_id}"
             )
 
             plan.steps.append(
                 PlanStep(
-                    step_id=step_id,
+                    step_id=
+                        lookup_step_id,
 
                     operation=
-                    "TRACK_LOOKUP",
+                        "TRACK_LOOKUP",
 
                     description=(
                         f'Find tracks matching '
@@ -116,8 +116,73 @@ class QueryPlanner:
                 )
             )
 
+            #
+            # By default the entity's final
+            # evidence comes directly from lookup.
+            #
+
+            entity_step_id = (
+                lookup_step_id
+            )
+
+            # ==============================================
+            # ATTRIBUTE FILTER
+            # ==============================================
+
+            if attributes:
+
+                attribute_step_id = (
+                    f"attributes_{entity_id}"
+                )
+
+                plan.steps.append(
+                    PlanStep(
+                        step_id=
+                            attribute_step_id,
+
+                        operation=
+                            "ATTRIBUTE_FILTER",
+
+                        description=(
+                            f"Filter {label} tracks "
+                            f"using requested attributes"
+                        ),
+
+                        depends_on=[
+                            lookup_step_id
+                        ],
+
+                        params={
+                            "entity_id":
+                                entity_id,
+
+                            "label":
+                                label,
+
+                            "attributes":
+                                attributes,
+                        },
+
+                        output=(
+                            f"{entity_id}"
+                            "_attribute_tracks"
+                        ),
+                    )
+                )
+
+                entity_step_id = (
+                    attribute_step_id
+                )
+
+            #
+            # IMPORTANT:
+            #
+            # Temporal overlap now depends on the
+            # FILTERED entity result.
+            #
+
             entity_steps.append(
-                step_id
+                entity_step_id
             )
 
         #

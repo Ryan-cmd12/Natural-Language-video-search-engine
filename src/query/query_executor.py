@@ -10,6 +10,10 @@ from src.query.entity_resolver import (
     EntityResolver,
 )
 
+from src.query.attribute_query import (
+    AttributeFilter,
+)
+
 class QueryExecutor:
 
     def __init__(
@@ -26,6 +30,10 @@ class QueryExecutor:
                 track_store=
                     track_store
             )
+        )
+
+        self.attribute_filter = (
+            AttributeFilter()
         )
     # ==================================================
     # MAIN EXECUTION
@@ -60,6 +68,18 @@ class QueryExecutor:
                     self._execute_track_lookup(
                         step,
                         video_id,
+                    )
+                )
+
+            #-------------------------------------------
+            # Attribute filter
+            #-------------------------------------------
+            elif operation == "ATTRIBUTE_FILTER":
+
+                result = (
+                    self._execute_attribute_filter(
+                        step,
+                        step_outputs,
                     )
                 )
 
@@ -737,3 +757,100 @@ class QueryExecutor:
             )
 
         return None
+
+    def _execute_attribute_filter(
+    self,
+    step,
+    step_outputs,
+    ):
+
+        inputs = (
+            self._get_dependency_values(
+                step,
+                step_outputs,
+            )
+        )
+
+        if not inputs:
+            return []
+
+        tracks = inputs[0]
+
+        attributes = (
+            step.params.get(
+                "attributes",
+                {},
+            )
+        )
+
+        if not attributes:
+
+            return tracks
+
+        matched = []
+        rejected = []
+        unverified = []
+
+        for track in tracks:
+
+            decision = (
+                self.attribute_filter.evaluate(
+                    track=track,
+                    attributes=attributes,
+                )
+            )
+
+            if (
+                decision.status
+                == "MATCH"
+            ):
+
+                matched.append(
+                    track
+                )
+
+            elif (
+                decision.status
+                == "REJECT"
+            ):
+
+                rejected.append(
+                    (
+                        track,
+                        decision,
+                    )
+                )
+
+            else:
+
+                unverified.append(
+                    (
+                        track,
+                        decision,
+                    )
+                )
+
+        print(
+            f"  attributes -> "
+            f"{len(matched)} verified, "
+            f"{len(rejected)} rejected, "
+            f"{len(unverified)} unverified"
+        )
+
+        for track, decision in rejected:
+
+            print(
+                f"    REJECT "
+                f'"{track.label}"'
+                f" | {decision.reason}"
+            )
+
+        for track, decision in unverified:
+
+            print(
+                f"    UNVERIFIED "
+                f'"{track.label}"'
+                f" | {decision.reason}"
+            )
+
+        return matched

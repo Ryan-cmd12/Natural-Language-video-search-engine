@@ -81,131 +81,271 @@ class QwenQueryCompiler:
         query: str,
     ) -> str:
 
-        return f"""
-You are a compiler for a natural-language video
-search engine.
+        prompt = """
+    You are a compiler for a natural-language video
+    search engine.
 
-Convert the user's request into structured JSON.
+    Convert the user's request into structured JSON.
 
-Do NOT answer the user's question.
-Do NOT invent events or objects.
-Only represent what the query asks for.
+    Do NOT answer the user's question.
+    Do NOT invent events or objects.
+    Only represent what the query asks for.
 
-User query:
+    User query:
 
-"{query}"
+    "__USER_QUERY__"
 
-Return ONLY valid JSON.
+    Return ONLY valid JSON.
 
-Schema:
+    Schema:
 
-{{
-    "target": "object | event | event_sequence | scene",
+    {
+        "target": "object | event | event_sequence | scene",
 
-    "entities": [
-        {{
-            "id": "entity_1",
-            "concept": "person",
-            "attributes": {{
-                "shirt_color": "red"
-            }}
-        }}
-    ],
+        "entities": [
+            {
+                "id": "entity_1",
+                "concept": "person",
+                "attributes": {
+                    "color": "red"
+                }
+            }
+        ],
 
-    "actions": [
-        {{
-            "id": "action_1",
-            "verb": "carry",
-            "actor": "entity_1",
-            "object": "entity_2",
-            "target": null,
-            "attributes": {{}}
-        }}
-    ],
+        "actions": [
+            {
+                "id": "action_1",
+                "verb": "carry",
+                "actor": "entity_1",
+                "object": "entity_2",
+                "target": null,
+                "attributes": {}
+            }
+        ],
 
-    "relationships": [
-        {{
-            "subject": "entity_1",
-            "predicate": "near",
-            "object": "entity_2"
-        }}
-    ],
+        "relationships": [
+            {
+                "subject": "entity_1",
+                "predicate": "near",
+                "object": "entity_2"
+            }
+        ],
 
-    "temporal_constraints": [
-        {{
-            "relation": "before | after | then | within | duration_gt | duration_lt",
-            "first": "action_1",
-            "second": "action_2",
-            "value": null,
-            "unit": null
-        }}
-    ]
-}}
+        "temporal_constraints": [
+            {
+                "relation": "before | after | then | within | duration_gt | duration_lt",
+                "first": "action_1",
+                "second": "action_2",
+                "value": null,
+                "unit": null
+            }
+        ]
+    }
 
-Rules:
+    Rules:
 
-1. Every entity gets a unique id.
-2. Keep the concept short and object-oriented.
-3. Put visual properties into attributes.
-4. Actions must reference entity ids.
-5. Do not create an action unless the query
-   actually contains an action.
-6. Use target="object" for simple queries like
-   "red car".
-7. Use target="event" for one action.
-8. Use target="event_sequence" for multiple
-   ordered actions.
-9. Use temporal constraints only when the query
-   actually specifies ordering or duration.
-10. For phrases like "then", create a temporal
-    constraint linking the actions.
-11. null must be JSON null.
-12. Output no markdown and no explanation.
-13. If the query names a visible object, person,
-    animal, or physical thing, it MUST appear in
-    "entities".
+    1. Every entity gets a unique id.
+    2. Keep the concept short and object-oriented.
+    3. Put visual properties into attributes.
+    4. Actions must reference entity ids.
+    5. Do not create an action unless the query
+    actually contains an action.
+    6. Use target="object" for simple queries like
+    "red car".
+    7. Use target="event" for one action.
+    8. Use target="event_sequence" for multiple
+    ordered actions.
+    9. Use temporal constraints only when the query
+    actually specifies ordering or duration.
+    10. For phrases like "then", create a temporal
+        constraint linking the actions.
+    11. null must be JSON null.
+    12. Output no markdown and no explanation.
+    13. If the query names a visible object, person,
+        animal, or physical thing, it MUST appear in
+        "entities".
+    14. A single object noun is still an entity.
+    15. Never return target="object" with an empty
+        "entities" list when the query names an object.
+    16. Never discard descriptive visual properties
+        such as color or size.
+    17. A color modifying an entity MUST be stored in
+        attributes["color"].
+    
+    ATTRIBUTE GROUNDING RULES:
+    - Attributes MUST come only from words explicitly present
+    in the user's query.
+    - Never infer or guess an attribute.
+    - Never copy an attribute value from an example.
+    - If no descriptive attribute is stated, use {}.
 
-14. A single object noun is still an entity.
+    Examples:
 
-15. Never return target="object" with an empty
-    "entities" list when the query names an object.
+    "car"
+    -> concept="car", attributes={}
 
-Examples:
+    "blue car"
+    -> concept="car", attributes={"color": "blue"}
 
-Query: "car"
+    "large dog"
+    -> concept="dog", attributes={"size": "large"}
 
-{{
-    "target": "object",
-    "entities": [
-        {{
-            "id": "entity_1",
-            "concept": "car",
-            "attributes": {{}}
-        }}
-    ],
-    "actions": [],
-    "relationships": [],
-    "temporal_constraints": []
-}}
+    "dog"
 
-Query: "red car"
+    Examples:
 
-{{
-    "target": "object",
-    "entities": [
-        {{
-            "id": "entity_1",
-            "concept": "car",
-            "attributes": {{
-                "color": "red"
-            }}
-        }}
-    ],
-    "actions": [],
-    "relationships": [],
-    "temporal_constraints": []
-}}
-""".strip()
+    Query: "car"
+
+    {
+        "target": "object",
+        "entities": [
+            {
+                "id": "entity_1",
+                "concept": "car",
+                "attributes": {}
+            }
+        ],
+        "actions": [],
+        "relationships": [],
+        "temporal_constraints": []
+    }
+
+    Query: "red car"
+
+    {
+        "target": "object",
+        "entities": [
+            {
+                "id": "entity_1",
+                "concept": "car",
+                "attributes": {
+                    "color": "red"
+                }
+            }
+        ],
+        "actions": [],
+        "relationships": [],
+        "temporal_constraints": []
+    }
+
+    Query: "blue car"
+
+    {
+        "target": "object",
+        "entities": [
+            {
+                "id": "entity_1",
+                "concept": "car",
+                "attributes": {
+                    "color": "blue"
+                }
+            }
+        ],
+        "actions": [],
+        "relationships": [],
+        "temporal_constraints": []
+    }
+
+    Query: "large black dog"
+
+    {
+        "target": "object",
+        "entities": [
+            {
+                "id": "entity_1",
+                "concept": "dog",
+                "attributes": {
+                    "size": "large",
+                    "color": "black"
+                }
+            }
+        ],
+        "actions": [],
+        "relationships": [],
+        "temporal_constraints": []
+    }
+
+    ENTITY EXTRACTION RULES:
+
+    Separate the base object/entity concept from descriptive
+    visual attributes.
+
+    "red car":
+        concept = "car"
+        color = "red"
+
+    "blue bus":
+        concept = "bus"
+        color = "blue"
+
+    "large black dog":
+        concept = "dog"
+        size = "large"
+        color = "black"
+
+        
+    SIZE ATTRIBUTE RULES:
+
+    Words describing physical size MUST be stored in
+    attributes["size"].
+
+    Normalize common synonyms:
+
+    "big" -> "large"
+    "large" -> "large"
+    "huge" -> "large"
+
+    "small" -> "small"
+    "tiny" -> "small"
+
+    Examples:
+
+    "big blue fish"
+    -> concept="fish"
+    -> attributes={"size": "large", "color": "blue"}
+
+    "tiny red car"
+    -> concept="car"
+    -> attributes={"size": "small", "color": "red"}
+
+    Do NOT include descriptive attributes inside "concept".
+
+    For "blue car":
+
+    CORRECT:
+    {
+        "concept": "car",
+        "attributes": {
+            "color": "blue"
+        }
+    }
+
+    INCORRECT:
+    {
+        "concept": "blue car",
+        "attributes": {}
+    }
+
+    INCORRECT:
+    {
+        "concept": "car",
+        "attributes": {}
+    }
+
+    FINAL CHECK:
+    Before returning JSON:
+
+    1. Every entity mentioned in the query is included.
+    2. Every attribute value appears explicitly in the query.
+    3. No attribute is copied from an example.
+    4. If an entity has no stated attributes, use {}.
+    5. Return JSON only.
+    """.strip()
+
+        return prompt.replace(
+            "__USER_QUERY__",
+            query,
+        )
 
     # ======================================
     # Extract JSON
