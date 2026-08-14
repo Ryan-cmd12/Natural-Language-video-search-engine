@@ -161,6 +161,50 @@ Rules:
     constraint linking the actions.
 11. null must be JSON null.
 12. Output no markdown and no explanation.
+13. If the query names a visible object, person,
+    animal, or physical thing, it MUST appear in
+    "entities".
+
+14. A single object noun is still an entity.
+
+15. Never return target="object" with an empty
+    "entities" list when the query names an object.
+
+Examples:
+
+Query: "car"
+
+{{
+    "target": "object",
+    "entities": [
+        {{
+            "id": "entity_1",
+            "concept": "car",
+            "attributes": {{}}
+        }}
+    ],
+    "actions": [],
+    "relationships": [],
+    "temporal_constraints": []
+}}
+
+Query: "red car"
+
+{{
+    "target": "object",
+    "entities": [
+        {{
+            "id": "entity_1",
+            "concept": "car",
+            "attributes": {{
+                "color": "red"
+            }}
+        }}
+    ],
+    "actions": [],
+    "relationships": [],
+    "temporal_constraints": []
+}}
 """.strip()
 
     # ======================================

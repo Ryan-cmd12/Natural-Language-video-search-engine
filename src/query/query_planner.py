@@ -467,9 +467,10 @@ class QueryPlanner:
     ):
 
         for field in [
+            "concept",
+            "type",    
             "label",
             "name",
-            "type",
             "description",
             "text",
         ]:
@@ -484,7 +485,6 @@ class QueryPlanner:
                 return str(value)
 
         return str(entity)
-
     def _get_entity_attributes(
         self,
         entity,
