@@ -130,6 +130,9 @@ class QueryPlanner:
             # ==============================================
 
             if attributes:
+                # ==============================================
+                # CHEAP ATTRIBUTE FILTER
+                # ==============================================
 
                 attribute_step_id = (
                     f"attributes_{entity_id}"
@@ -145,7 +148,7 @@ class QueryPlanner:
 
                         description=(
                             f"Filter {label} tracks "
-                            f"using requested attributes"
+                            f"using indexed attributes"
                         ),
 
                         depends_on=[
@@ -165,13 +168,57 @@ class QueryPlanner:
 
                         output=(
                             f"{entity_id}"
-                            "_attribute_tracks"
+                            "_attribute_state"
+                        ),
+                    )
+                )
+
+                # ==============================================
+                # VLM ATTRIBUTE VERIFICATION
+                # ==============================================
+
+                verify_step_id = (
+                    f"verify_attributes_"
+                    f"{entity_id}"
+                )
+
+                plan.steps.append(
+                    PlanStep(
+                        step_id=
+                            verify_step_id,
+
+                        operation=
+                            "VISUAL_ATTRIBUTE_VERIFY",
+
+                        description=(
+                            f"Visually verify unresolved "
+                            f"attributes for {label}"
+                        ),
+
+                        depends_on=[
+                            attribute_step_id
+                        ],
+
+                        params={
+                            "entity_id":
+                                entity_id,
+
+                            "label":
+                                label,
+
+                            "attributes":
+                                attributes,
+                        },
+
+                        output=(
+                            f"{entity_id}"
+                            "_verified_tracks"
                         ),
                     )
                 )
 
                 entity_step_id = (
-                    attribute_step_id
+                    verify_step_id
                 )
 
             #

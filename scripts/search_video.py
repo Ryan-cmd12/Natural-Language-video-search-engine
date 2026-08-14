@@ -16,6 +16,14 @@ from src.storage.track_store import (
     TrackStore,
 )
 
+from src.reasoning.qwen_verifier import (
+    QwenVideoVerifier,
+)
+
+from src.query.qwen_attribute_verifier import (
+    QwenAttributeVerifier
+)
+
 
 def format_timestamp(
     seconds: float,
@@ -128,11 +136,22 @@ def main():
     store = (
         TrackStore()
     )
+    qwen = QwenVideoVerifier(
+        max_frames=8,
+    )
 
-    executor = (
-        QueryExecutor(
-            track_store=store
+    attribute_verifier = (
+        QwenAttributeVerifier(
+            ask_fn=
+                qwen.ask_image
         )
+    )
+
+    executor = QueryExecutor(
+        track_store=store,
+
+        attribute_verifier=
+            attribute_verifier,
     )
 
     results = executor.execute(

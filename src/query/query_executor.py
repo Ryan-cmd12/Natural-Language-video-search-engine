@@ -12,6 +12,7 @@ from src.query.entity_resolver import (
 
 from src.query.attribute_query import (
     AttributeFilter,
+    AttributeFilterResult,
 )
 
 class QueryExecutor:
@@ -19,6 +20,7 @@ class QueryExecutor:
     def __init__(
         self,
         track_store: TrackStore,
+        attribute_verifier=None,
     ):
 
         self.track_store = (
@@ -34,6 +36,10 @@ class QueryExecutor:
 
         self.attribute_filter = (
             AttributeFilter()
+        )
+
+        self.attribute_verifier = (
+            attribute_verifier
         )
     # ==================================================
     # MAIN EXECUTION
@@ -122,6 +128,22 @@ class QueryExecutor:
                     self._execute_rank_results(
                         step,
                         step_outputs,
+                    )
+                )
+
+            #-------------------------------------------
+            # Attribute verify
+            #-------------------------------------------
+            elif (
+                operation
+                == "VISUAL_ATTRIBUTE_VERIFY"
+            ):
+
+                result = (
+                    self._execute_visual_attribute_verify(
+                        step=step,
+                        step_outputs=step_outputs,
+                        video_id=video_id,
                     )
                 )
 
@@ -759,9 +781,65 @@ class QueryExecutor:
         return None
 
     def _execute_attribute_filter(
+        self,
+        step,
+        step_outputs,
+    ):
+
+        inputs = (
+            self._get_dependency_values(
+                step,
+                step_outputs,
+            )
+        )
+
+        if not inputs:
+            return AttributeFilterResult()
+
+        tracks = inputs[0]
+
+        attributes = (
+            step.params.get(
+                "attributes",
+                {},
+            )
+        )
+
+        result = (
+            self.attribute_filter.filter_tracks(
+                tracks=tracks,
+                attributes=attributes,
+            )
+        )
+
+        print(
+            f"  attributes -> "
+            f"{len(result.verified)} verified, "
+            f"{len(result.rejected)} rejected, "
+            f"{len(result.unverified)} unverified"
+        )
+
+        for track in result.rejected:
+
+            print(
+                f'    REJECT "{track.label}"'
+            )
+
+        for track in result.unverified:
+
+            print(
+                f'    UNVERIFIED "{track.label}"'
+            )
+
+        return result
+
+
+
+    def _execute_visual_attribute_verify(
     self,
     step,
     step_outputs,
+    video_id: str,
     ):
 
         inputs = (
@@ -774,7 +852,72 @@ class QueryExecutor:
         if not inputs:
             return []
 
-        tracks = inputs[0]
+        state = inputs[0]
+
+        if not isinstance(
+            state,
+            AttributeFilterResult,
+        ):
+
+            raise TypeError(
+                "VISUAL_ATTRIBUTE_VERIFY "
+                "expected AttributeFilterResult"
+            )
+
+        #
+        # Tracks already proven by metadata /
+        # index labels do not need Qwen.
+        #
+
+        verified_tracks = list(
+            state.verified
+        )
+
+        #
+        # Nothing uncertain.
+        #
+
+        if not state.unverified:
+
+            print(
+                "  no visual verification "
+                "required"
+            )
+
+            return verified_tracks
+
+        #
+        # If no verifier is configured,
+        # do NOT treat uncertain tracks as
+        # matches.
+        #
+
+        if self.attribute_verifier is None:
+
+            print(
+                "  visual verifier unavailable"
+            )
+
+            return verified_tracks
+
+        video_path = (
+            self.track_store.get_video_path(
+                video_id
+            )
+        )
+
+        if not video_path:
+
+            print(
+                "  video path not found "
+                "in track index"
+            )
+
+            return verified_tracks
+
+        label = (
+            step.params["label"]
+        )
 
         attributes = (
             step.params.get(
@@ -783,74 +926,45 @@ class QueryExecutor:
             )
         )
 
-        if not attributes:
+        for track in state.unverified:
 
-            return tracks
+            result = (
+                self.attribute_verifier.verify_track(
+                    video_path=
+                        video_path,
 
-        matched = []
-        rejected = []
-        unverified = []
+                    video_id=
+                        video_id,
 
-        for track in tracks:
+                    track=
+                        track,
 
-            decision = (
-                self.attribute_filter.evaluate(
-                    track=track,
-                    attributes=attributes,
+                    entity_label=
+                        label,
+
+                    attributes=
+                        attributes,
                 )
+            )
+
+            print(
+                f'    VLM "{track.label}"'
+                f" -> {result.status}"
+                f" ({result.confidence:.3f})"
+                f" | {result.reason}"
             )
 
             if (
-                decision.status
-                == "MATCH"
+                result.status == "MATCH"
             ):
 
-                matched.append(
+                verified_tracks.append(
                     track
                 )
 
-            elif (
-                decision.status
-                == "REJECT"
-            ):
-
-                rejected.append(
-                    (
-                        track,
-                        decision,
-                    )
-                )
-
-            else:
-
-                unverified.append(
-                    (
-                        track,
-                        decision,
-                    )
-                )
-
         print(
-            f"  attributes -> "
-            f"{len(matched)} verified, "
-            f"{len(rejected)} rejected, "
-            f"{len(unverified)} unverified"
+            f"  -> {len(verified_tracks)} "
+            f"verified track(s)"
         )
 
-        for track, decision in rejected:
-
-            print(
-                f"    REJECT "
-                f'"{track.label}"'
-                f" | {decision.reason}"
-            )
-
-        for track, decision in unverified:
-
-            print(
-                f"    UNVERIFIED "
-                f'"{track.label}"'
-                f" | {decision.reason}"
-            )
-
-        return matched
+        return verified_tracks

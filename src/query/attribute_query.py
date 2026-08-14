@@ -1,4 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 from src.models.tracked_object import (
     ObjectTrack,
@@ -7,6 +10,7 @@ from src.models.tracked_object import (
 
 @dataclass
 class AttributeDecision:
+
     status: str
 
     # MATCH
@@ -14,6 +18,28 @@ class AttributeDecision:
     # UNVERIFIED
 
     reason: str
+
+    confidence: float = 1.0
+
+
+@dataclass
+class AttributeFilterResult:
+
+    verified: list[ObjectTrack] = field(
+        default_factory=list
+    )
+
+    rejected: list[ObjectTrack] = field(
+        default_factory=list
+    )
+
+    unverified: list[ObjectTrack] = field(
+        default_factory=list
+    )
+
+    reasons: dict[str, str] = field(
+        default_factory=dict
+    )
 
 
 class AttributeFilter:
@@ -35,6 +61,57 @@ class AttributeFilter:
         "gold",
     }
 
+    # ==================================================
+    # FILTER MULTIPLE TRACKS
+    # ==================================================
+
+    def filter_tracks(
+        self,
+        tracks: list[ObjectTrack],
+        attributes,
+    ) -> AttributeFilterResult:
+
+        result = AttributeFilterResult()
+
+        for track in tracks:
+
+            decision = self.evaluate(
+                track=track,
+                attributes=attributes,
+            )
+
+            key = str(
+                track.track_id
+            )
+
+            result.reasons[key] = (
+                decision.reason
+            )
+
+            if decision.status == "MATCH":
+
+                result.verified.append(
+                    track
+                )
+
+            elif decision.status == "REJECT":
+
+                result.rejected.append(
+                    track
+                )
+
+            else:
+
+                result.unverified.append(
+                    track
+                )
+
+        return result
+
+    # ==================================================
+    # SINGLE TRACK
+    # ==================================================
+
     def evaluate(
         self,
         track: ObjectTrack,
@@ -54,23 +131,20 @@ class AttributeFilter:
                 reason="no_attributes_requested",
             )
 
-        label_tokens = (
-            self._tokens(
-                track.label
-            )
+        label_tokens = self._tokens(
+            track.label
         )
 
         unresolved = []
 
-        for (
-            attribute_name,
-            attribute_value,
-        ) in attributes.items():
+        for name, value in (
+            attributes.items()
+        ):
 
             decision = (
                 self._evaluate_attribute(
-                    name=attribute_name,
-                    value=attribute_value,
+                    name=name,
+                    value=value,
                     label_tokens=label_tokens,
                 )
             )
@@ -95,7 +169,6 @@ class AttributeFilter:
 
             return AttributeDecision(
                 status="UNVERIFIED",
-
                 reason="; ".join(
                     unresolved
                 ),
@@ -123,33 +196,15 @@ class AttributeFilter:
             .strip()
         )
 
-        # ----------------------------------------------
-        # COLOR
-        # ----------------------------------------------
-
         if name in {
             "color",
             "colour",
         }:
 
-            return (
-                self._evaluate_color(
-                    value=value,
-                    label_tokens=
-                        label_tokens,
-                )
+            return self._evaluate_color(
+                value=value,
+                label_tokens=label_tokens,
             )
-
-        # ----------------------------------------------
-        # GENERIC STRING ATTRIBUTE
-        #
-        # Example:
-        #
-        # size = large
-        #
-        # "large car" confirms it.
-        # "car" does not.
-        # ----------------------------------------------
 
         value_tokens = (
             self._value_tokens(
@@ -183,7 +238,7 @@ class AttributeFilter:
             status="UNVERIFIED",
             reason=(
                 f"{name}={value} "
-                f"not encoded in track label"
+                f"requires visual verification"
             ),
         )
 
@@ -193,15 +248,13 @@ class AttributeFilter:
         label_tokens: set[str],
     ) -> AttributeDecision:
 
-        requested_colors = (
-            self._value_tokens(
-                value
-            )
+        requested = (
+            self._value_tokens(value)
             &
             self.COLOR_WORDS
         )
 
-        if not requested_colors:
+        if not requested:
 
             return AttributeDecision(
                 status="UNVERIFIED",
@@ -210,61 +263,37 @@ class AttributeFilter:
                 ),
             )
 
-        stored_colors = (
+        stored = (
             label_tokens
             &
             self.COLOR_WORDS
         )
 
-        # ----------------------------------------------
-        # Index explicitly says red, blue, etc.
-        # ----------------------------------------------
-
-        if (
-            requested_colors
-            &
-            stored_colors
-        ):
+        if requested & stored:
 
             return AttributeDecision(
                 status="MATCH",
                 reason=(
-                    "color verified "
-                    "from track label"
+                    "color verified from "
+                    "track label"
                 ),
             )
 
-        # ----------------------------------------------
-        # Index explicitly contains another color.
-        #
-        # requested: red
-        # track: blue car
-        #
-        # Definitely reject.
-        # ----------------------------------------------
-
-        if stored_colors:
+        if stored:
 
             return AttributeDecision(
                 status="REJECT",
                 reason=(
-                    "track has conflicting "
-                    f"color: "
-                    f"{', '.join(stored_colors)}"
+                    "conflicting color: "
+                    f"{', '.join(stored)}"
                 ),
             )
-
-        # ----------------------------------------------
-        # Generic "car" track.
-        #
-        # We cannot prove it is red.
-        # ----------------------------------------------
 
         return AttributeDecision(
             status="UNVERIFIED",
             reason=(
-                "track color is not "
-                "currently verified"
+                "color requires visual "
+                "verification"
             ),
         )
 
@@ -286,30 +315,19 @@ class AttributeFilter:
         ):
             return attributes
 
-        #
-        # Support something like:
-        #
-        # ["red", "large"]
-        #
-        # temporarily.
-        #
-
         if isinstance(
             attributes,
             list,
         ):
 
             return {
-                f"attribute_{index}":
-                    value
-
-                for index, value
+                f"attribute_{i}": value
+                for i, value
                 in enumerate(attributes)
             }
 
         return {
-            "attribute":
-                attributes
+            "attribute": attributes
         }
 
     def _tokens(
@@ -320,8 +338,8 @@ class AttributeFilter:
         text = (
             str(text)
             .lower()
-            .replace("-", " ")
             .replace("_", " ")
+            .replace("-", " ")
         )
 
         return {
@@ -341,17 +359,17 @@ class AttributeFilter:
             (list, tuple, set),
         ):
 
-            tokens = set()
+            result = set()
 
             for item in value:
 
-                tokens.update(
+                result.update(
                     self._tokens(
                         str(item)
                     )
                 )
 
-            return tokens
+            return result
 
         return self._tokens(
             str(value)

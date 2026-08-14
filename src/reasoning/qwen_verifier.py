@@ -479,3 +479,115 @@ class QwenVideoVerifier:
         return self._parse_response(
             output_text
         )
+    def ask_image(
+    self,
+    image_path: str,
+    prompt: str,
+    ) -> str:
+
+        image_path_for_qwen = (
+            self._to_local_path(
+                image_path
+            )
+        )
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image":
+                            image_path_for_qwen,
+                    },
+                    {
+                        "type": "text",
+                        "text":
+                            prompt,
+                    },
+                ],
+            }
+        ]
+
+        text = (
+            self.processor
+            .apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        )
+
+        (
+            image_inputs,
+            video_inputs,
+        ) = process_vision_info(
+            messages
+        )
+
+        inputs = self.processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+
+        if self.device == "cpu":
+
+            inputs = inputs.to(
+                "cpu"
+            )
+
+        else:
+
+            inputs = inputs.to(
+                self.model.device
+            )
+
+        with torch.inference_mode():
+
+            generated_ids = (
+                self.model.generate(
+                    **inputs,
+
+                    max_new_tokens=180,
+
+                    do_sample=False,
+                )
+            )
+
+        generated_ids_trimmed = [
+            output_ids[
+                len(input_ids):
+            ]
+
+            for (
+                input_ids,
+                output_ids,
+            ) in zip(
+                inputs.input_ids,
+                generated_ids,
+            )
+        ]
+
+        output_text = (
+            self.processor
+            .batch_decode(
+                generated_ids_trimmed,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )[0]
+        )
+
+        print(
+            "\n[QWEN ATTRIBUTE RAW RESPONSE]"
+        )
+
+        print(
+            output_text
+        )
+
+        print()
+
+        return output_text

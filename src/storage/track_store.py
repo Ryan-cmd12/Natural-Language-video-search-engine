@@ -520,3 +520,50 @@ class TrackStore:
             )
 
         return indexes
+
+    def get_video_path(
+    self,
+    video_id: str,
+    ) -> str | None:
+
+        pattern = (
+            f"{video_id}__*.json"
+        )
+
+        for path in self.root_dir.glob(
+            pattern
+        ):
+
+            try:
+
+                with open(
+                    path,
+                    "r",
+                    encoding="utf-8",
+                ) as f:
+
+                    data = json.load(f)
+
+            except (
+                OSError,
+                json.JSONDecodeError,
+            ):
+
+                continue
+
+            if (
+                data.get("video_id")
+                != video_id
+            ):
+                continue
+
+            video_path = (
+                data.get(
+                    "video_path"
+                )
+            )
+
+            if video_path:
+                return video_path
+
+        return None
