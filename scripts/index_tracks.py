@@ -52,6 +52,24 @@ def main():
         default=None,
     )
 
+    parser.add_argument(
+        "--scan-interval",
+        type=int,
+        default=None,
+        help="Search for the prompt every N frames until an object is found.",
+    )
+
+    parser.add_argument(
+        "--direction",
+        type=str,
+        choices=[
+            "forward",
+            "backward",
+            "both",
+        ],
+        default="both",
+    )
+
     args = parser.parse_args()
 
     t0 = perf_counter()
@@ -65,6 +83,16 @@ def main():
     print(
     f"Metadata: "
     f"{perf_counter() - t0:.2f}s"
+    )
+
+    total_frames = max(
+        1,
+        int(
+            round(
+                metadata.duration
+                * metadata.fps
+            )
+        ),
     )
 
 
@@ -140,6 +168,15 @@ def main():
 
             max_frames=
                 args.max_frames,
+
+            total_frames=
+                total_frames,
+
+            scan_interval=
+                args.scan_interval,
+
+            direction=
+                args.direction,
         )
     )
     print(

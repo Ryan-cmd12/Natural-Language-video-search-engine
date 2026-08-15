@@ -18,7 +18,7 @@ class Sam3VideoTracker:
     def start_session(
         self,
         resource_path: str,
-        offload_video_to_cpu: bool = False,
+        offload_video_to_cpu: bool = True,
         offload_state_to_cpu: bool = False,
     ) -> str:
 

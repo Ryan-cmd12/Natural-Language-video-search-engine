@@ -30,7 +30,9 @@ class TrackBuilder:
         prompt_frame: int = 0,
         output_prob_thresh: float = 0.5,
         max_frames: int | None = None,
-        direction:str = "forward",
+        total_frames: int | None = None,
+        scan_interval: int | None = None,
+        direction: str = "both",
     ) -> list[ObjectTrack]:
 
         if fps <= 0:
@@ -51,69 +53,122 @@ class TrackBuilder:
         )
 
         try:
-
             # --------------------------------
-            # Seed the tracker
+            # Find a seed frame
             # --------------------------------
 
-            initial = (
-                self.tracker
-                .add_text_prompt(
-                    session_id=
-                        session_id,
+            if scan_interval is not None:
 
-                    frame_index=
-                        prompt_frame,
+                if scan_interval <= 0:
+                    raise ValueError(
+                        "scan_interval must be greater than 0."
+                    )
 
-                    text=
-                        prompt,
+                if total_frames is None:
+                    raise ValueError(
+                        "total_frames is required "
+                        "when scan_interval is used."
+                    )
 
-                    output_prob_thresh=
-                        output_prob_thresh,
+                frames_to_try = list(
+                    range(
+                        0,
+                        total_frames,
+                        scan_interval,
+                    )
                 )
-            )
 
-            initial_outputs = (
-                initial.get(
-                    "outputs",
-                    {},
-                )
-            )
-            initial_object_ids = (
-                initial_outputs.get(
-                    "out_obj_ids",
-                    [],
-                )
-            )
+                # Make sure we also test the final frame.
+                last_frame = total_frames - 1
 
-            if initial_object_ids is None:
-                initial_object_ids = []
+                if (
+                    frames_to_try
+                    and frames_to_try[-1]
+                    != last_frame
+                ):
+                    frames_to_try.append(
+                        last_frame
+                    )
 
-            print(
-                "Initial objects:",
-                len(initial_object_ids)
-            )
+            else:
 
-            if len(initial_object_ids) == 0:
+                frames_to_try = [
+                    prompt_frame
+                ]
+
+
+            seed_frame = None
+
+            for frame_index in frames_to_try:
 
                 print(
-                    "No objects found on "
-                    f"prompt frame {prompt_frame}. "
-                    "Skipping propagation."
+                    f"Searching frame "
+                    f"{frame_index} "
+                    f"for '{prompt}'..."
                 )
 
-                return []
+                initial = (
+                    self.tracker
+                    .add_text_prompt(
+                        session_id=
+                            session_id,
 
-            print(
-                "Initial objects:",
-                len(
+                        frame_index=
+                            frame_index,
+
+                        text=
+                            prompt,
+
+                        output_prob_thresh=
+                            output_prob_thresh,
+                    )
+                )
+
+                initial_outputs = (
+                    initial.get(
+                        "outputs",
+                        {},
+                    )
+                )
+
+                initial_object_ids = (
                     initial_outputs.get(
                         "out_obj_ids",
                         [],
                     )
                 )
-            )
 
+                if initial_object_ids is None:
+                    initial_object_ids = []
+
+                print(
+                    f"Objects found: "
+                    f"{len(initial_object_ids)}"
+                )
+
+                if len(initial_object_ids) > 0:
+
+                    seed_frame = (
+                        frame_index
+                    )
+
+                    print(
+                        f"\nFound '{prompt}' "
+                        f"on frame "
+                        f"{seed_frame}."
+                    )
+
+                    break
+
+
+            if seed_frame is None:
+
+                print(
+                    f"\nNo '{prompt}' objects "
+                    f"found in scanned frames."
+                )
+
+                return []
             # --------------------------------
             # object_id -> TrackPoint[]
             # --------------------------------
@@ -139,7 +194,7 @@ class TrackBuilder:
                         direction,
 
                     start_frame_index=
-                        prompt_frame,
+                        seed_frame,
 
                     max_frames=
                         max_frames,

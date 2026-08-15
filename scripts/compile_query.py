@@ -1,4 +1,5 @@
 import argparse
+import torch
 import json
 
 from src.query.qwen_query_compiler import (
@@ -19,7 +20,7 @@ def main():
 
     compiler = (
         QwenQueryCompiler(
-            device="cpu"
+            device="cuda" if torch.cuda.is_available() else "cpu"
         )
     )
 
