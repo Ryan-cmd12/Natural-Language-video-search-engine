@@ -15,6 +15,10 @@ from src.query.attribute_query import (
     AttributeFilterResult,
 )
 
+from src.query.spatial_relationship_filter import (
+    SpatialRelationshipFilter,
+)
+
 class QueryExecutor:
 
     def __init__(
@@ -22,6 +26,9 @@ class QueryExecutor:
         track_store: TrackStore,
         attribute_verifier=None,
     ):
+        self.spatial_filter = (
+            SpatialRelationshipFilter()
+        )
 
         self.track_store = (
             track_store
@@ -148,11 +155,21 @@ class QueryExecutor:
                 )
 
             # ------------------------------------------
-            # NOT IMPLEMENTED YET
+            # Relationship filter
             # ------------------------------------------
+            elif (
+                operation
+                == "RELATIONSHIP_FILTER"
+            ):
+
+                result = (
+                    self._execute_relationship_filter(
+                        step,
+                        step_outputs,
+                    )
+                )
 
             elif operation in {
-                "RELATIONSHIP_FILTER",
                 "ACTION_FILTER",
                 "TEMPORAL_FILTER",
                 "VLM_VERIFY",
@@ -571,6 +588,209 @@ class QueryExecutor:
 
         return windows
 
+    def _execute_relationship_filter(
+            self,
+            step,
+            step_outputs,
+        ):
+
+            relationships = (
+                step.params.get(
+                    "relationships",
+                    [],
+                )
+            )
+
+            if not relationships:
+
+                print(
+                    "  no relationships"
+                )
+
+                return []
+
+            #
+            # First implementation:
+            #
+            # Execute one spatial relationship
+            # correctly before introducing
+            # multi-relationship conjunctions.
+            #
+
+            if len(relationships) > 1:
+
+                raise NotImplementedError(
+                    "Multiple simultaneous "
+                    "relationships are not "
+                    "implemented yet."
+                )
+
+            relationship = (
+                relationships[0]
+            )
+
+            subject_id = (
+                relationship[
+                    "subject"
+                ]
+            )
+
+            object_id = (
+                relationship[
+                    "object"
+                ]
+            )
+
+            predicate = (
+                relationship[
+                    "predicate"
+                ]
+            )
+
+            # ==============================================
+            # GET ENTITY TRACKS
+            # ==============================================
+
+            subject_tracks = (
+                self._get_entity_tracks(
+                    entity_id=subject_id,
+                    step_outputs=step_outputs,
+                )
+            )
+
+            object_tracks = (
+                self._get_entity_tracks(
+                    entity_id=object_id,
+                    step_outputs=step_outputs,
+                )
+            )
+
+            print(
+                f"  relationship: "
+                f"{subject_id} "
+                f"{predicate} "
+                f"{object_id}"
+            )
+
+            print(
+                f"  subject tracks: "
+                f"{len(subject_tracks)}"
+            )
+
+            print(
+                f"  object tracks: "
+                f"{len(object_tracks)}"
+            )
+
+            if (
+                not subject_tracks
+                or
+                not object_tracks
+            ):
+
+                return []
+
+            windows = []
+
+            # ==============================================
+            # COMPARE TRACK PAIRS
+            # ==============================================
+
+            for subject_track in (
+                subject_tracks
+            ):
+
+                for object_track in (
+                    object_tracks
+                ):
+
+                    #
+                    # Exact same track should never
+                    # be compared with itself.
+                    #
+
+                    if (
+                        subject_track.video_id
+                        ==
+                        object_track.video_id
+                        and
+                        subject_track.label
+                        ==
+                        object_track.label
+                        and
+                        subject_track.track_id
+                        ==
+                        object_track.track_id
+                    ):
+
+                        continue
+
+                    result = (
+                        self.spatial_filter.evaluate(
+                            subject_track=
+                                subject_track,
+
+                            object_track=
+                                object_track,
+
+                            relationship=
+                                predicate,
+                        )
+                    )
+
+                    print(
+                        f"    "
+                        f"{subject_track.label}"
+                        f" #{subject_track.track_id}"
+                        f" {predicate} "
+                        f"{object_track.label}"
+                        f" #{object_track.track_id}"
+                        f" -> {result.status}"
+                        f" ({result.confidence:.3f})"
+                    )
+
+                    if (
+                        result.status
+                        != "MATCH"
+                    ):
+
+                        continue
+
+                    if not (
+                        result.matching_frames
+                    ):
+
+                        continue
+
+                    #
+                    # Convert matching spatial
+                    # frames into CandidateWindows.
+                    #
+
+                    pair_windows = (
+                        self._build_spatial_windows(
+                            subject_track=
+                                subject_track,
+
+                            object_track=
+                                object_track,
+
+                            matching_frames=
+                                result.matching_frames,
+                        )
+                    )
+
+                    windows.extend(
+                        pair_windows
+                    )
+
+            print(
+                f"  relationship -> "
+                f"{len(windows)} window(s)"
+            )
+
+            return windows
+
     # ==================================================
     # PASS THROUGH
     # ==================================================
@@ -968,3 +1188,396 @@ class QueryExecutor:
         )
 
         return verified_tracks
+
+
+    def _execute_relationship_filter(
+            self,
+            step,
+            step_outputs,
+        ):
+
+            relationships = (
+                step.params.get(
+                    "relationships",
+                    [],
+                )
+            )
+
+            if not relationships:
+
+                print(
+                    "  no relationships"
+                )
+
+                return []
+
+            #
+            # First implementation:
+            #
+            # Execute one spatial relationship
+            # correctly before introducing
+            # multi-relationship conjunctions.
+            #
+
+            if len(relationships) > 1:
+
+                raise NotImplementedError(
+                    "Multiple simultaneous "
+                    "relationships are not "
+                    "implemented yet."
+                )
+
+            relationship = (
+                relationships[0]
+            )
+
+            subject_id = (
+                relationship[
+                    "subject"
+                ]
+            )
+
+            object_id = (
+                relationship[
+                    "object"
+                ]
+            )
+
+            predicate = (
+                relationship[
+                    "predicate"
+                ]
+            )
+
+            # ==============================================
+            # GET ENTITY TRACKS
+            # ==============================================
+
+            subject_tracks = (
+                self._get_entity_tracks(
+                    entity_id=subject_id,
+                    step_outputs=step_outputs,
+                )
+            )
+
+            object_tracks = (
+                self._get_entity_tracks(
+                    entity_id=object_id,
+                    step_outputs=step_outputs,
+                )
+            )
+
+            print(
+                f"  relationship: "
+                f"{subject_id} "
+                f"{predicate} "
+                f"{object_id}"
+            )
+
+            print(
+                f"  subject tracks: "
+                f"{len(subject_tracks)}"
+            )
+
+            print(
+                f"  object tracks: "
+                f"{len(object_tracks)}"
+            )
+
+            if (
+                not subject_tracks
+                or
+                not object_tracks
+            ):
+
+                return []
+
+            windows = []
+
+            # ==============================================
+            # COMPARE TRACK PAIRS
+            # ==============================================
+
+            for subject_track in (
+                subject_tracks
+            ):
+
+                for object_track in (
+                    object_tracks
+                ):
+
+                    #
+                    # Exact same track should never
+                    # be compared with itself.
+                    #
+
+                    if (
+                        subject_track.video_id
+                        ==
+                        object_track.video_id
+                        and
+                        subject_track.label
+                        ==
+                        object_track.label
+                        and
+                        subject_track.track_id
+                        ==
+                        object_track.track_id
+                    ):
+
+                        continue
+
+                    result = (
+                        self.spatial_filter.evaluate(
+                            subject_track=
+                                subject_track,
+
+                            object_track=
+                                object_track,
+
+                            relationship=
+                                predicate,
+                        )
+                    )
+
+                    print(
+                        f"    "
+                        f"{subject_track.label}"
+                        f" #{subject_track.track_id}"
+                        f" {predicate} "
+                        f"{object_track.label}"
+                        f" #{object_track.track_id}"
+                        f" -> {result.status}"
+                        f" ({result.confidence:.3f})"
+                    )
+
+                    if (
+                        result.status
+                        != "MATCH"
+                    ):
+
+                        continue
+
+                    if not (
+                        result.matching_frames
+                    ):
+
+                        continue
+
+                    #
+                    # Convert matching spatial
+                    # frames into CandidateWindows.
+                    #
+
+                    pair_windows = (
+                        self._build_spatial_windows(
+                            subject_track=
+                                subject_track,
+
+                            object_track=
+                                object_track,
+
+                            matching_frames=
+                                result.matching_frames,
+                        )
+                    )
+
+                    windows.extend(
+                        pair_windows
+                    )
+
+            print(
+                f"  relationship -> "
+                f"{len(windows)} window(s)"
+            )
+
+            return windows
+
+
+    def _build_spatial_windows(
+            self,
+            subject_track,
+            object_track,
+            matching_frames,
+        ):
+
+            if not matching_frames:
+
+                return []
+
+            matching_frames = sorted(
+                matching_frames
+            )
+
+            #
+            # Split:
+            #
+            # [1,2,3,8,9]
+            #
+            # into:
+            #
+            # [1,2,3]
+            # [8,9]
+            #
+
+            runs = []
+
+            current_run = [
+                matching_frames[0]
+            ]
+
+            for frame_index in (
+                matching_frames[1:]
+            ):
+
+                previous_frame = (
+                    current_run[-1]
+                )
+
+                if (
+                    frame_index
+                    ==
+                    previous_frame + 1
+                ):
+
+                    current_run.append(
+                        frame_index
+                    )
+
+                else:
+
+                    runs.append(
+                        current_run
+                    )
+
+                    current_run = [
+                        frame_index
+                    ]
+
+            runs.append(
+                current_run
+            )
+
+            # ==============================================
+            # FRAME → TIMESTAMP LOOKUP
+            # ==============================================
+
+            subject_points = {
+
+                point.frame_index:
+                    point
+
+                for point
+                in subject_track.points
+            }
+
+            object_points = {
+
+                point.frame_index:
+                    point
+
+                for point
+                in object_track.points
+            }
+
+            windows = []
+
+            for run in runs:
+
+                timestamps = []
+
+                for frame_index in run:
+
+                    subject_point = (
+                        subject_points.get(
+                            frame_index
+                        )
+                    )
+
+                    object_point = (
+                        object_points.get(
+                            frame_index
+                        )
+                    )
+
+                    if (
+                        subject_point
+                        is not None
+                    ):
+
+                        timestamps.append(
+                            subject_point.timestamp
+                        )
+
+                    elif (
+                        object_point
+                        is not None
+                    ):
+
+                        timestamps.append(
+                            object_point.timestamp
+                        )
+
+                if not timestamps:
+
+                    continue
+
+                windows.append(
+                    CandidateWindow(
+                        start_time=min(
+                            timestamps
+                        ),
+
+                        end_time=max(
+                            timestamps
+                        ),
+
+                        tracks=[
+                            subject_track,
+                            object_track,
+                        ],
+                    )
+                )
+
+            return windows
+
+
+
+    def _get_entity_tracks(
+            self,
+            entity_id: str,
+            step_outputs,
+        ):
+
+            #
+            # Prefer visually verified tracks
+            # when attributes were present.
+            #
+
+            verified_key = (
+                f"{entity_id}"
+                "_verified_tracks"
+            )
+
+            if verified_key in step_outputs:
+
+                return step_outputs[
+                    verified_key
+                ]
+
+            #
+            # Otherwise use normal track
+            # lookup output.
+            #
+
+            track_key = (
+                f"{entity_id}_tracks"
+            )
+
+            if track_key in step_outputs:
+
+                return step_outputs[
+                    track_key
+                ]
+
+            return []
