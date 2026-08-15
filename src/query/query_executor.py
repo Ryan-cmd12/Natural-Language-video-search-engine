@@ -19,13 +19,40 @@ from src.query.spatial_relationship_filter import (
     SpatialRelationshipFilter,
 )
 
+from src.query.window_frame_sampler import (
+    WindowFrameSampler,
+)
+
+import tempfile
+
+from src.query.temporal_filter import (
+    TemporalFilter,
+)
+
 class QueryExecutor:
 
     def __init__(
         self,
         track_store: TrackStore,
         attribute_verifier=None,
+        video_verifier=None,
+        window_frame_sampler=None,
     ):
+        from src.query.temporal_filter import (
+            TemporalFilter,
+        )
+
+        self.video_verifier = (
+            video_verifier
+        )
+
+        self.window_frame_sampler = (
+            window_frame_sampler
+            or
+            WindowFrameSampler(
+                sample_count=8
+            )
+        )
         self.spatial_filter = (
             SpatialRelationshipFilter()
         )
@@ -168,22 +195,48 @@ class QueryExecutor:
                         step_outputs,
                     )
                 )
-
-            elif operation in {
-                "ACTION_FILTER",
-                "TEMPORAL_FILTER",
-                "VLM_VERIFY",
-            }:
+            #------------------------------------------
+            # Action filter
+            #------------------------------------------
+            elif (
+                operation
+                == "ACTION_FILTER"
+            ):
 
                 result = (
-                    self._pass_through(
-                        step,
-                        step_outputs,
+                    self._execute_action_filter(
+                        step=step,
+                        step_outputs=step_outputs,
                     )
                 )
 
-                print(
-                    "  currently pass-through"
+            #-----------------------------------------
+            #VLM filter
+            #-----------------------------------------
+            elif (
+                operation
+                == "VLM_VERIFY"
+            ):
+
+                result = (
+                    self._execute_vlm_verify(
+                        step=step,
+                        step_outputs=step_outputs,
+                        video_id=video_id,
+                    )
+                )
+
+
+            elif (
+                operation
+                == "TEMPORAL_FILTER"
+            ):
+
+                result = (
+                    self._execute_temporal_filter(
+                        step=step,
+                        step_outputs=step_outputs,
+                    )
                 )
 
             else:
@@ -1581,3 +1634,661 @@ class QueryExecutor:
                 ]
 
             return []
+
+
+
+    def _track_key(
+        self,
+        track,
+    ):
+
+        return (
+            track.video_id,
+            track.label,
+            track.track_id,
+        )
+
+    def _execute_action_filter(
+        self,
+        step,
+        step_outputs,
+    ):
+
+        inputs = (
+            self._get_dependency_values(
+                step,
+                step_outputs,
+            )
+        )
+
+        if not inputs:
+
+            return []
+
+        source = inputs[0]
+
+        actions = (
+            step.params.get(
+                "actions",
+                [],
+            )
+        )
+
+        if not actions:
+
+            return source
+
+        # ==============================================
+        # NORMALIZE EVERYTHING TO WINDOWS
+        # ==============================================
+
+        windows = []
+
+        for item in source:
+
+            if isinstance(
+                item,
+                CandidateWindow,
+            ):
+
+                windows.append(
+                    item
+                )
+
+            else:
+
+                #
+                # Raw ObjectTrack.
+                #
+                # This happens for queries such as:
+                #
+                # "person walking"
+                #
+                # where there may only be one entity.
+                #
+
+                windows.append(
+                    CandidateWindow(
+                        start_time=
+                            item.start_time,
+
+                        end_time=
+                            item.end_time,
+
+                        tracks=[
+                            item
+                        ],
+                    )
+                )
+
+        filtered = []
+
+        # ==============================================
+        # PARTICIPANT PREFILTER
+        # ==============================================
+
+        for window in windows:
+
+            if self._window_supports_actions(
+                window=window,
+                actions=actions,
+                step_outputs=step_outputs,
+            ):
+
+                filtered.append(
+                    window
+                )
+
+        print(
+            f"  action candidates -> "
+            f"{len(filtered)} / "
+            f"{len(windows)} window(s)"
+        )
+
+        return filtered
+
+
+
+
+
+
+
+    def _window_supports_actions(
+        self,
+        window,
+        actions,
+        step_outputs,
+    ):
+
+        window_track_keys = {
+
+            self._track_key(
+                track
+            )
+
+            for track
+            in window.tracks
+        }
+
+        for action in actions:
+
+            #
+            # ActionSpec:
+            #
+            # actor
+            # object
+            # target
+            #
+
+            participant_ids = [
+
+                action.get(
+                    "actor"
+                ),
+
+                action.get(
+                    "object"
+                ),
+
+                action.get(
+                    "target"
+                ),
+            ]
+
+            participant_ids = [
+
+                participant_id
+
+                for participant_id
+                in participant_ids
+
+                if participant_id
+            ]
+
+            for entity_id in (
+                participant_ids
+            ):
+
+                entity_tracks = (
+                    self._get_entity_tracks(
+                        entity_id=
+                            entity_id,
+
+                        step_outputs=
+                            step_outputs,
+                    )
+                )
+
+                if not entity_tracks:
+
+                    print(
+                        f"    action participant "
+                        f"'{entity_id}' "
+                        f"has no tracks"
+                    )
+
+                    return False
+
+                entity_track_keys = {
+
+                    self._track_key(
+                        track
+                    )
+
+                    for track
+                    in entity_tracks
+                }
+
+                #
+                # Window must contain at least
+                # one track belonging to this
+                # action participant.
+                #
+
+                if (
+                    window_track_keys
+                    .isdisjoint(
+                        entity_track_keys
+                    )
+                ):
+
+                    return False
+
+        return True
+
+    def _execute_vlm_verify(
+        self,
+        step,
+        step_outputs,
+        video_id: str,
+    ):
+
+        inputs = (
+            self._get_dependency_values(
+                step,
+                step_outputs,
+            )
+        )
+
+        if not inputs:
+
+            return []
+
+        windows = inputs[0]
+
+        if not windows:
+
+            return []
+
+        query = (
+            step.params[
+                "query"
+            ]
+        )
+
+        required = (
+            step.params.get(
+                "required",
+                False,
+            )
+        )
+
+        # ==============================================
+        # VERIFIER AVAILABILITY
+        # ==============================================
+
+        if (
+            self.video_verifier
+            is None
+        ):
+
+            print(
+                "  video verifier unavailable"
+            )
+
+            #
+            # Actions MUST NOT silently pass.
+            #
+
+            if required:
+
+                return []
+
+            #
+            # Relationship-only queries have
+            # already been geometrically verified.
+            #
+
+            return windows
+
+        video_path = (
+            self.track_store
+            .get_video_path(
+                video_id
+            )
+        )
+
+        if not video_path:
+
+            print(
+                "  video path not found"
+            )
+
+            return []
+
+        verified_windows = []
+
+        # ==============================================
+        # VERIFY EACH WINDOW
+        # ==============================================
+
+        for index, window in enumerate(
+            windows
+        ):
+
+            with tempfile.TemporaryDirectory(
+                prefix=(
+                    "video_query_"
+                )
+            ) as temp_dir:
+
+                frame_paths = (
+                    self.window_frame_sampler
+                    .sample(
+                        video_path=
+                            video_path,
+
+                        start_time=
+                            window.start_time,
+
+                        end_time=
+                            window.end_time,
+
+                        output_dir=
+                            temp_dir,
+                    )
+                )
+
+                if not frame_paths:
+
+                    print(
+                        f"    window #{index}: "
+                        f"no frames"
+                    )
+
+                    continue
+
+                segment = {
+
+                    "start_time":
+                        window.start_time,
+
+                    "end_time":
+                        window.end_time,
+
+                    "frame_paths":
+                        frame_paths,
+                }
+
+                result = (
+                    self.video_verifier
+                    .verify(
+                        query=query,
+                        segment=segment,
+                    )
+                )
+
+                print(
+                    f"    window "
+                    f"{window.start_time:.2f}s"
+                    f" -> "
+                    f"{window.end_time:.2f}s"
+                    f" | "
+                    f"{'MATCH' if result.match else 'REJECT'}"
+                    f" ({result.confidence:.3f})"
+                    f" | {result.reason}"
+                )
+
+                if not result.match:
+
+                    continue
+
+                #
+                # Keep useful evidence on
+                # the CandidateWindow.
+                #
+
+                window.vlm_confidence = (
+                    result.confidence
+                )
+
+                window.vlm_reason = (
+                    result.reason
+                )
+
+                window.vlm_evidence_frames = (
+                    result.evidence_frames
+                )
+
+                verified_windows.append(
+                    window
+                )
+
+        print(
+            f"  VLM -> "
+            f"{len(verified_windows)} / "
+            f"{len(windows)} "
+            f"verified window(s)"
+        )
+
+        return verified_windows
+
+
+
+
+    def _get_temporal_entity_windows(
+        self,
+        entity_id,
+        step_outputs,
+    ):
+
+        tracks = (
+            self._get_entity_tracks(
+                entity_id=entity_id,
+                step_outputs=step_outputs,
+            )
+        )
+
+        return [
+            CandidateWindow(
+                start_time=
+                    track.start_time,
+
+                end_time=
+                    track.end_time,
+
+                tracks=[
+                    track
+                ],
+            )
+
+            for track
+            in tracks
+        ]
+
+
+
+    def _execute_temporal_filter(
+        self,
+        step,
+        step_outputs,
+    ):
+
+        constraints = (
+            step.params.get(
+                "constraints",
+                [],
+            )
+        )
+
+        inputs = (
+            self._get_dependency_values(
+                step,
+                step_outputs,
+            )
+        )
+
+        if not inputs:
+
+            return []
+
+        source_windows = (
+            inputs[0]
+        )
+
+        if not constraints:
+
+            return source_windows
+
+        current_windows = list(
+            source_windows
+        )
+
+        for constraint in constraints:
+
+            relation = (
+                constraint[
+                    "relation"
+                ]
+            )
+
+            first_id = (
+                constraint[
+                    "first"
+                ]
+            )
+
+            second_id = (
+                constraint[
+                    "second"
+                ]
+            )
+
+            value = (
+                constraint.get(
+                    "value"
+                )
+            )
+
+            unit = (
+                constraint.get(
+                    "unit"
+                )
+            )
+
+            first_windows = (
+                self._get_temporal_entity_windows(
+                    entity_id=first_id,
+                    step_outputs=step_outputs,
+                )
+            )
+
+            second_windows = (
+                self._get_temporal_entity_windows(
+                    entity_id=second_id,
+                    step_outputs=step_outputs,
+                )
+            )
+
+            #
+            # If either reference is not an
+            # entity, it may refer to an action.
+            #
+            # We defer those cases to Qwen for
+            # now rather than pretending that
+            # an action has the same duration
+            # as its actor's entire track.
+            #
+
+            if (
+                not first_windows
+                or
+                not second_windows
+            ):
+
+                print(
+                    f"  temporal '{relation}' "
+                    f"requires event/action "
+                    f"reasoning -> deferred to VLM"
+                )
+
+                continue
+
+            matching_keys = set()
+
+            print(
+                f"  temporal: "
+                f"{first_id} "
+                f"{relation} "
+                f"{second_id}"
+            )
+
+            for first in first_windows:
+
+                for second in second_windows:
+
+                    result = (
+                        self.temporal_filter
+                        .evaluate(
+                            first=first,
+                            second=second,
+                            relation=relation,
+                            value=value,
+                            unit=unit,
+                        )
+                    )
+
+                    first_track = (
+                        first.tracks[0]
+                    )
+
+                    second_track = (
+                        second.tracks[0]
+                    )
+
+                    print(
+                        f"    "
+                        f"{first_track.label}"
+                        f" #{first_track.track_id}"
+                        f" {relation} "
+                        f"{second_track.label}"
+                        f" #{second_track.track_id}"
+                        f" -> {result.status}"
+                    )
+
+                    if (
+                        result.status
+                        !=
+                        "MATCH"
+                    ):
+                        continue
+
+                    matching_keys.add(
+                        self._track_key(
+                            first_track
+                        )
+                    )
+
+                    matching_keys.add(
+                        self._track_key(
+                            second_track
+                        )
+                    )
+
+            if not matching_keys:
+
+                current_windows = []
+                break
+
+            #
+            # Keep candidate windows containing
+            # evidence satisfying the constraint.
+            #
+
+            filtered = []
+
+            for window in (
+                current_windows
+            ):
+
+                window_keys = {
+
+                    self._track_key(
+                        track
+                    )
+
+                    for track
+                    in window.tracks
+                }
+
+                if (
+                    window_keys
+                    &
+                    matching_keys
+                ):
+
+                    filtered.append(
+                        window
+                    )
+
+            current_windows = (
+                filtered
+            )
+
+        print(
+            f"  temporal -> "
+            f"{len(current_windows)} "
+            f"window(s)"
+        )
+
+        return current_windows

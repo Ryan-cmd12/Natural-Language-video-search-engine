@@ -20,11 +20,11 @@ class QwenQueryCompiler:
 
     def __init__(
         self,
+        device,
         model_name: str = (
             "Qwen/"
             "Qwen2.5-3B-Instruct"
         ),
-        device: str = "cpu",
     ):
 
         self.model_name = model_name
@@ -82,20 +82,14 @@ class QwenQueryCompiler:
     ) -> str:
 
         prompt = """
-    You are a compiler for a natural-language video
-    search engine.
+    You are a compiler for a natural-language video search engine.
 
-    Convert the user's request into structured JSON.
-
-    Do NOT answer the user's question.
-    Do NOT invent events or objects.
-    Only represent what the query asks for.
-
-    User query:
-
-    "__USER_QUERY__"
+    Convert the user query into structured JSON.
 
     Return ONLY valid JSON.
+    Do not answer the query.
+    Do not invent objects, attributes, actions, relationships,
+    or temporal constraints.
 
     Schema:
 
@@ -105,113 +99,130 @@ class QwenQueryCompiler:
         "entities": [
             {
                 "id": "entity_1",
-                "concept": "person",
-                "attributes": {
-                    "color": "red"
-                }
+                "concept": "human",
+                "attributes": {}
             }
         ],
 
         "actions": [
             {
                 "id": "action_1",
-                "verb": "carry",
+                "verb": "walk",
                 "actor": "entity_1",
-                "object": "entity_2",
+                "object": null,
                 "target": null,
                 "attributes": {}
             }
         ],
 
-        "relationships": [
-            {
-                "subject": "entity_1",
-                "predicate": "near",
-                "object": "entity_2"
-            }
-        ],
-
-        "temporal_constraints": [
-            {
-                "relation": "before | after | then | within | duration_gt | duration_lt",
-                "first": "action_1",
-                "second": "action_2",
-                "value": null,
-                "unit": null
-            }
-        ]
-    }
-
-    Rules:
-
-    1. Every entity gets a unique id.
-    2. Keep the concept short and object-oriented.
-    3. Put visual properties into attributes.
-    4. Actions must reference entity ids.
-    5. Do not create an action unless the query
-    actually contains an action.
-    6. Use target="object" for simple queries like
-    "red car".
-    7. Use target="event" for one action.
-    8. Use target="event_sequence" for multiple
-    ordered actions.
-    9. Use temporal constraints only when the query
-    actually specifies ordering or duration.
-    10. For phrases like "then", create a temporal
-        constraint linking the actions.
-    11. null must be JSON null.
-    12. Output no markdown and no explanation.
-    13. If the query names a visible object, person,
-        animal, or physical thing, it MUST appear in
-        "entities".
-    14. A single object noun is still an entity.
-    15. Never return target="object" with an empty
-        "entities" list when the query names an object.
-    16. Never discard descriptive visual properties
-        such as color or size.
-    17. A color modifying an entity MUST be stored in
-        attributes["color"].
-    
-    ATTRIBUTE GROUNDING RULES:
-    - Attributes MUST come only from words explicitly present
-    in the user's query.
-    - Never infer or guess an attribute.
-    - Never copy an attribute value from an example.
-    - If no descriptive attribute is stated, use {}.
-
-    Examples:
-
-    "car"
-    -> concept="car", attributes={}
-
-    "blue car"
-    -> concept="car", attributes={"color": "blue"}
-
-    "large dog"
-    -> concept="dog", attributes={"size": "large"}
-
-    "dog"
-
-    Examples:
-
-    Query: "car"
-
-    {
-        "target": "object",
-        "entities": [
-            {
-                "id": "entity_1",
-                "concept": "car",
-                "attributes": {}
-            }
-        ],
-        "actions": [],
         "relationships": [],
+
         "temporal_constraints": []
     }
 
-    Query: "red car"
+    ENTITY RULES:
 
+    1. Every visible physical object, person, animal,
+    or thing explicitly mentioned in the query MUST
+    become an entity.
+
+    2. Preserve the base noun used by the user whenever
+    possible.
+
+    Examples:
+
+    "human" -> concept="human"
+    "person" -> concept="person"
+    "car" -> concept="car"
+    "dog" -> concept="dog"
+
+    Do NOT replace "human" with "car".
+    Do NOT invent an entity that is not mentioned.
+
+    3. Descriptive visual properties belong in attributes.
+
+    "red car"
+    -> concept="car"
+    -> attributes={"color": "red"}
+
+    "large dog"
+    -> concept="dog"
+    -> attributes={"size": "large"}
+
+    4. Attributes MUST come only from words explicitly
+    present in the query.
+
+    5. If no attribute is stated, use {}.
+
+    ACTION RULES:
+
+    1. A verb describing what an entity is doing MUST
+    become an action.
+
+    2. Normalize verbs to their base form.
+
+    walking -> walk
+    running -> run
+    sitting -> sit
+    standing -> stand
+    carrying -> carry
+    holding -> hold
+    driving -> drive
+    eating -> eat
+
+    3. The entity performing the action MUST be referenced
+    through the action's "actor" field.
+
+    4. Do not put actions inside entity attributes.
+
+    5. If the query contains exactly one action:
+    target = "event"
+
+    6. If the query contains multiple ordered actions:
+    target = "event_sequence"
+
+    7. If the query contains no action and only asks for
+    an object:
+    target = "object"
+
+    RELATIONSHIP RULES:
+
+    Create relationships only when explicitly stated.
+
+    Example:
+
+    "human near car"
+
+    entities:
+    - human
+    - car
+
+    relationship:
+    {
+        "subject": "entity_1",
+        "predicate": "near",
+        "object": "entity_2"
+    }
+
+    TEMPORAL RULES:
+
+    Create temporal constraints only when the query explicitly
+    specifies ordering or duration.
+
+    Examples:
+
+    "human walks then sits"
+
+    -> two actions
+    -> target="event_sequence"
+    -> temporal relation="then"
+
+    EXAMPLES:
+
+    Query:
+    "red car"
+
+    Output:
     {
         "target": "object",
         "entities": [
@@ -228,118 +239,76 @@ class QwenQueryCompiler:
         "temporal_constraints": []
     }
 
-    Query: "blue car"
+    Query:
+    "human walking"
 
+    Output:
     {
-        "target": "object",
+        "target": "event",
         "entities": [
             {
                 "id": "entity_1",
-                "concept": "car",
-                "attributes": {
-                    "color": "blue"
-                }
+                "concept": "human",
+                "attributes": {}
             }
         ],
-        "actions": [],
+        "actions": [
+            {
+                "id": "action_1",
+                "verb": "walk",
+                "actor": "entity_1",
+                "object": null,
+                "target": null,
+                "attributes": {}
+            }
+        ],
         "relationships": [],
         "temporal_constraints": []
     }
 
-    Query: "large black dog"
+    Query:
+    "dog running"
 
+    Output:
     {
-        "target": "object",
+        "target": "event",
         "entities": [
             {
                 "id": "entity_1",
                 "concept": "dog",
-                "attributes": {
-                    "size": "large",
-                    "color": "black"
-                }
+                "attributes": {}
             }
         ],
-        "actions": [],
+        "actions": [
+            {
+                "id": "action_1",
+                "verb": "run",
+                "actor": "entity_1",
+                "object": null,
+                "target": null,
+                "attributes": {}
+            }
+        ],
         "relationships": [],
         "temporal_constraints": []
     }
 
-    ENTITY EXTRACTION RULES:
-
-    Separate the base object/entity concept from descriptive
-    visual attributes.
-
-    "red car":
-        concept = "car"
-        color = "red"
-
-    "blue bus":
-        concept = "bus"
-        color = "blue"
-
-    "large black dog":
-        concept = "dog"
-        size = "large"
-        color = "black"
-
-        
-    SIZE ATTRIBUTE RULES:
-
-    Words describing physical size MUST be stored in
-    attributes["size"].
-
-    Normalize common synonyms:
-
-    "big" -> "large"
-    "large" -> "large"
-    "huge" -> "large"
-
-    "small" -> "small"
-    "tiny" -> "small"
-
-    Examples:
-
-    "big blue fish"
-    -> concept="fish"
-    -> attributes={"size": "large", "color": "blue"}
-
-    "tiny red car"
-    -> concept="car"
-    -> attributes={"size": "small", "color": "red"}
-
-    Do NOT include descriptive attributes inside "concept".
-
-    For "blue car":
-
-    CORRECT:
-    {
-        "concept": "car",
-        "attributes": {
-            "color": "blue"
-        }
-    }
-
-    INCORRECT:
-    {
-        "concept": "blue car",
-        "attributes": {}
-    }
-
-    INCORRECT:
-    {
-        "concept": "car",
-        "attributes": {}
-    }
-
     FINAL CHECK:
-    Before returning JSON:
 
-    1. Every entity mentioned in the query is included.
-    2. Every attribute value appears explicitly in the query.
-    3. No attribute is copied from an example.
-    4. If an entity has no stated attributes, use {}.
-    5. Return JSON only.
+    Before returning:
+
+    1. Every explicitly mentioned physical entity is included.
+    2. No unmentioned entity has been added.
+    3. Every action explicitly mentioned is included.
+    4. Action verbs are normalized to their base form.
+    5. Every action references the correct entity.
+    6. Attribute values come only from the query.
+    7. Return valid JSON only.
+
+    USER QUERY:
+    "__USER_QUERY__"
+
+    OUTPUT:
     """.strip()
 
         return prompt.replace(

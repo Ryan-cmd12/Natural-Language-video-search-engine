@@ -1,0 +1,10 @@
+{
+    "schema_version": 1,
+    "video_id": "door",
+    "video_path": "samples/door.mp4",
+    "label": "person",
+    "fps": 30.0,
+    "track_count": 0,
+    "build_info": {},
+    "tracks": []
+}

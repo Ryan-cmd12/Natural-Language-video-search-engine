@@ -1,5 +1,19 @@
 import argparse
 
+import json
+
+import gc
+
+import torch
+
+from pathlib import Path
+import subprocess
+import sys
+
+from src.query.entity_resolver import (
+    EntityResolver,
+)
+
 from src.query.qwen_query_compiler import (
     QwenQueryCompiler,
 )
@@ -49,13 +63,189 @@ def format_timestamp(
     )
 
 
+def resolve_video(
+    video_arg: str,
+    track_store: TrackStore,):
+
+    path = Path(
+        video_arg
+    )
+
+    #
+    # Raw/local video supplied.
+    #
+
+    if path.exists():
+
+        video_path = str(
+            path.resolve()
+        )
+
+        video_id = (
+            path.stem
+        )
+
+        return (
+            video_id,
+            video_path,
+        )
+
+    #
+    # Otherwise treat the argument
+    # as an existing video_id.
+    #
+
+    video_id = (
+        video_arg
+    )
+
+    video_path = (
+        track_store.get_video_path(
+            video_id
+        )
+    )
+
+    if not video_path:
+
+        raise FileNotFoundError(
+            f'Video "{video_arg}" is '
+            f"not indexed and is not "
+            f"a valid file path."
+        )
+
+    return (
+        video_id,
+        video_path,
+    )
+
+
+
+def ensure_entity_indexes(
+    compiled_query,
+    video_id: str,
+    video_path: str,
+    track_store: TrackStore,
+) -> TrackStore:
+
+    store = (
+        track_store
+    )
+
+    for entity in (
+        compiled_query.entities
+    ):
+
+        label = (
+            entity.concept
+        )
+
+        print(
+            f'\nChecking index for '
+            f'"{label}"...'
+        )
+
+        #
+        # Important:
+        #
+        # Resolve only the base concept here.
+        #
+        # We intentionally DO NOT use:
+        #
+        #   red van
+        #   large dog
+        #
+        # as SAM prompts.
+        #
+        # Attributes are handled later by
+        # AttributeFilter/Qwen.
+        #
+
+        resolver = (
+            EntityResolver(
+                track_store=store
+            )
+        )
+
+        resolved = (
+            resolver.resolve(
+                video_id=video_id,
+
+                entity_id=
+                    entity.id,
+
+                label=
+                    label,
+
+                attributes={},
+            )
+        )
+
+        if resolved.found:
+
+            print(
+                f'  Existing compatible '
+                f'index found for "{label}".'
+            )
+
+            continue
+
+        # =====================================
+        # MISSING INDEX
+        # =====================================
+
+        print(
+            f'  No index found for '
+            f'"{label}".'
+        )
+
+        print(
+            f'  Building SAM3 index...'
+        )
+
+        command = [
+            sys.executable,
+            "-m",
+            "scripts.index_tracks",
+            video_path,
+            label,
+        ]
+
+        subprocess.run(
+            command,
+            check=True,
+        )
+
+        #
+        # Reload the TrackStore.
+        #
+        # This protects us if TrackStore
+        # caches its index manifest when
+        # constructed.
+        #
+
+        store = (
+            TrackStore()
+        )
+
+        print(
+            f'  Finished indexing '
+            f'"{label}".'
+        )
+
+    return store
+
+
 def main():
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "video_id",
+        "video",
         type=str,
+        help=(
+            "Video ID or path to "
+            "a local video file."
+        ),
     )
 
     parser.add_argument(
@@ -69,7 +259,23 @@ def main():
         default=10,
     )
 
+    parser.add_argument(
+        "--show-compiled",
+        action="store_true",
+    )
+
     args = parser.parse_args()
+
+    store = (
+        TrackStore()
+    )
+
+    video_id, video_path = (
+        resolve_video(
+            video_arg=args.video,
+            track_store=store,
+        )
+    )
 
     print(
         "\n============================"
@@ -84,11 +290,18 @@ def main():
     )
 
     print(
-        f"\nVideo: {args.video_id}"
+        f"\nVideo ID: "
+        f"{video_id}"
     )
 
     print(
-        f"Query: {args.query}"
+        f"Video path: "
+        f"{video_path}"
+    )
+
+    print(
+        f"Query: "
+        f"{args.query}"
     )
 
     # -----------------------------------
@@ -100,7 +313,7 @@ def main():
     )
 
     compiler = (
-        QwenQueryCompiler()
+        QwenQueryCompiler(device = "cuda" if torch.cuda.is_available() else "cpu")
     )
 
     compiled_query = (
@@ -108,6 +321,59 @@ def main():
             args.query
         )
     )
+
+    #
+    # Query compiler is no longer needed.
+    # Free GPU memory before SAM3/Qwen VLM.
+    #
+
+    del compiler
+
+    gc.collect()
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    print(
+    "\nChecking required "
+    "video indexes..."
+    )
+
+    store = (
+        ensure_entity_indexes(
+            compiled_query=
+                compiled_query,
+
+            video_id=
+                video_id,
+
+            video_path=
+                video_path,
+
+            track_store=
+                store,
+        )
+    )
+
+    if args.show_compiled:
+        print(
+            "\n============================"
+        )
+
+        print(
+            "COMPILED QUERY"
+        )
+
+        print(
+            "============================"
+        )
+
+        print(
+            json.dumps(
+                compiled_query.to_dict(),
+                indent=4,
+            )
+        )
 
     # -----------------------------------
     # PLANNING
@@ -125,6 +391,21 @@ def main():
         compiled_query
     )
 
+    print("\n============================")
+    print("RAW QUERY PLAN")
+    print("============================")
+
+    if hasattr(plan, "model_dump"):
+        print(
+            json.dumps(
+                plan.model_dump(),
+                indent=4,
+                default=str,
+            )
+        )
+    else:
+        print(plan)
+
     # -----------------------------------
     # EXECUTION
     # -----------------------------------
@@ -132,31 +413,32 @@ def main():
     print(
         "\nExecuting query..."
     )
-
-    store = (
-        TrackStore()
-    )
-    qwen = QwenVideoVerifier(
+    qwen_video_verifier = QwenVideoVerifier(
         max_frames=8,
     )
 
     attribute_verifier = (
         QwenAttributeVerifier(
             ask_fn=
-                qwen.ask_image
+                qwen_video_verifier.ask_image
         )
     )
 
     executor = QueryExecutor(
         track_store=store,
 
-        attribute_verifier=
-            attribute_verifier,
+        attribute_verifier=(
+            attribute_verifier
+        ),
+
+        video_verifier=(
+            qwen_video_verifier
+        ),
     )
 
     results = executor.execute(
         plan=plan,
-        video_id=args.video_id,
+        video_id=video_id,
     )
 
     # -----------------------------------

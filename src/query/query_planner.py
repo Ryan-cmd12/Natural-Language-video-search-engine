@@ -5,6 +5,7 @@ from src.query.plan_models import (
 
 
 class QueryPlanner:
+    
 
     def plan(
         self,
@@ -52,6 +53,12 @@ class QueryPlanner:
             )
             or []
         )
+        if temporal_constraints:
+
+            raise NotImplementedError(
+                "Temporal constraints are "
+                "not supported in V0.4."
+            )
 
         entity_steps = []
 
@@ -480,6 +487,14 @@ class QueryPlanner:
                     params={
                         "query":
                             plan.query,
+
+                        #
+                        # Action semantics cannot be
+                        # safely accepted without VLM.
+                        #
+
+                        "required":
+                            bool(actions),
                     },
 
                     output=

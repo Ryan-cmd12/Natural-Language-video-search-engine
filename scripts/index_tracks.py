@@ -55,7 +55,7 @@ def main():
     parser.add_argument(
         "--scan-interval",
         type=int,
-        default=None,
+        default=30,
         help="Search for the prompt every N frames until an object is found.",
     )
 
